@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -121,26 +120,37 @@ pub fn find_git_repositories(path: &Path) -> Result<Vec<PathBuf>> {
         repos.push(path.to_path_buf());
     }
 
-    if path.is_dir() {
-        for entry in WalkDir::new(path)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let entry_path = entry.path();
-            if entry_path != path && is_git_repository(entry_path) {
-                repos.push(entry_path.to_path_buf());
-            }
+    visit_dirs(path, &mut repos)?;
+    Ok(repos)
+}
+
+/// Recursively visit directories looking for git repositories
+fn visit_dirs(dir: &Path, repos: &mut Vec<PathBuf>) -> Result<()> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+
+    let entries = fs::read_dir(dir)
+        .with_context(|| format!("Failed to read directory: {}", dir.display()))?;
+
+    for entry in entries {
+        let entry = entry.with_context(|| "Failed to read directory entry")?;
+        let path = entry.path();
+        
+        if path.is_dir() && is_git_repository(&path) {
+            repos.push(path.clone());
+        } else if path.is_dir() && !path.file_name().unwrap_or_default().to_string_lossy().starts_with('.') {
+            // Recursively search subdirectories, but skip hidden directories
+            visit_dirs(&path, repos)?;
         }
     }
 
-    Ok(repos)
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn test_git_hook_filename() {

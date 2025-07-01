@@ -3,7 +3,6 @@ use regex::Regex;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use tracing::{debug, info};
 
 /// Commit message processor that formats messages based on branch names
 pub struct CommitMessageProcessor {
@@ -45,25 +44,19 @@ impl CommitMessageProcessor {
             .collect::<Vec<_>>()
             .is_empty()
         {
-            debug!("Commit message already has content, skipping formatting");
             return Ok(());
         }
 
         // Get current branch name
         let branch_name = self.get_current_branch_name()?;
-        debug!("Current branch: {}", branch_name);
 
         // Generate formatted message
         if let Some(formatted_msg) = self.format_commit_message_from_branch(&branch_name) {
-            info!("Generated commit message: {}", formatted_msg);
-            
             // Prepend the formatted message to existing content
             let new_content = format!("{}\n\n{}", formatted_msg, current_msg);
             
             fs::write(commit_msg_file, new_content)
                 .with_context(|| format!("Failed to write commit message file: {}", commit_msg_file.display()))?;
-        } else {
-            debug!("No ticket found in branch name, skipping message formatting");
         }
 
         Ok(())
