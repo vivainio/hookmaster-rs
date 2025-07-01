@@ -1,0 +1,27 @@
+# Example githooks.toml configuration file
+# This file defines commands to run for different git hooks
+# Place this file in your repository root and customize as needed
+
+# Run before each commit - good for formatting and linting
+pre-commit = "cargo fmt --check && cargo clippy -- -D warnings"
+
+# Run before pushing - good for running tests
+pre-push = "cargo test --all"
+
+# Empty string means the hook does nothing (but hookmaster still handles prepare-commit-msg)
+commit-msg = ""
+
+# You can also define custom commands for other hooks
+# post-commit = "echo 'Commit completed!'"
+
+# For Python projects:
+# pre-commit = "black --check . && flake8 ."
+# pre-push = "pytest"
+
+# For Node.js projects:
+# pre-commit = "npm run lint && npm run format:check"
+# pre-push = "npm test && npm run build"
+
+# For mixed projects:
+# pre-commit = "make lint"
+# pre-push = "make test" 
