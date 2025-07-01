@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+    steps:
+    - uses: actions/checkout@v4
+    - name: Get the release version from the tag
+      shell: bash
+      if: env.VERSION == ''
+      run: |
+        echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        echo "version is: ${{ env.VERSION }}"
+    - name: Create GitHub release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ env.VERSION }}
+        release_name: Release ${{ env.VERSION }}
+        draft: false
+        prerelease: false
+
+  build-release:
+    name: Build Release
+    needs: ['create-release']
+    strategy:
+      matrix:
+        build: [linux, macos, macos-arm, windows]
+        include:
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+          target: x86_64-unknown-linux-gnu
+          archive-name: hookmaster-linux.tar.gz
+        - build: macos
+          os: macos-latest
+          rust: stable
+          target: x86_64-apple-darwin
+          archive-name: hookmaster-macos.tar.gz
+        - build: macos-arm
+          os: macos-latest
+          rust: stable
+          target: aarch64-apple-darwin
+          archive-name: hookmaster-macos-arm.tar.gz
+        - build: windows
+          os: windows-latest
+          rust: stable
+          target: x86_64-pc-windows-msvc
+          archive-name: hookmaster-windows.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ matrix.rust }}
+        target: ${{ matrix.target }}
+
+    - name: Get the release version from the tag
+      shell: bash
+      if: env.VERSION == ''
+      run: |
+        echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+        echo "version is: ${{ env.VERSION }}"
+
+    - name: Build release binary
+      shell: bash
+      run: |
+        cargo build --verbose --release --target ${{ matrix.target }}
+        
+    - name: Strip release binary (linux and macos)
+      if: matrix.build == 'linux' || matrix.build == 'macos'
+      shell: bash
+      run: |
+        strip "target/${{ matrix.target }}/release/hookmaster"
+        
+    - name: Build archive
+      shell: bash
+      run: |
+        mkdir -p "dist"
+        
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cp "target/${{ matrix.target }}/release/hookmaster.exe" "dist/"
+          cd dist
+          7z a "../${{ matrix.archive-name }}" hookmaster.exe
+          cd ..
+        else
+          cp "target/${{ matrix.target }}/release/hookmaster" "dist/"
+          cd dist
+          tar czf "../${{ matrix.archive-name }}" hookmaster
+          cd ..
+        fi
+
+    - name: Upload release archive
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.create-release.outputs.upload_url }}
+        asset_path: ${{ matrix.archive-name }}
+        asset_name: ${{ matrix.archive-name }}
+        asset_content_type: application/octet-stream 

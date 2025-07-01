@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
+mod commit_msg;
 mod config;
 mod git_hooks;
-mod commit_msg;
 mod hook_manager;
 
 use hook_manager::HookManager;
@@ -32,10 +32,15 @@ Use 'hookmaster <command> --help' for more information on a specific command.
 const VERSION: &str = "hookmaster 0.1.0";
 
 enum Command {
-    Add { path: PathBuf },
+    Add {
+        path: PathBuf,
+    },
     Init,
-    Run { hook_name: String, args: Vec<String> },
-    PrepareCommitMsg { 
+    Run {
+        hook_name: String,
+        args: Vec<String>,
+    },
+    PrepareCommitMsg {
         commit_msg_file: PathBuf,
         commit_source: Option<String>,
         commit_sha: Option<String>,
@@ -44,7 +49,8 @@ enum Command {
 
 fn print_help_for_command(command: &str) {
     match command {
-        "add" => println!("\
+        "add" => println!(
+            "\
 Add hookmaster hooks to all projects under the specified path
 
 USAGE:
@@ -52,14 +58,18 @@ USAGE:
 
 ARGS:
     <PATH>    Path to add hooks to (searches recursively for git repositories)
-"),
-        "init" => println!("\
+"
+        ),
+        "init" => println!(
+            "\
 Initialize current repository with sample githooks.toml
 
 USAGE:
     hookmaster init
-"),
-        "run" => println!("\
+"
+        ),
+        "run" => println!(
+            "\
 Run a specific hook command
 
 USAGE:
@@ -68,8 +78,10 @@ USAGE:
 ARGS:
     <HOOK_NAME>    Hook name to run (e.g., pre-commit, commit-msg, etc.)
     [ARGS]...      Additional arguments to pass to the hook
-"),
-        "prepare-commit-msg" => println!("\
+"
+        ),
+        "prepare-commit-msg" => println!(
+            "\
 Process prepare-commit-msg hook
 
 USAGE:
@@ -79,103 +91,136 @@ ARGS:
     <COMMIT_MSG_FILE>    Path to the commit message file
     [COMMIT_SOURCE]      Commit source (optional)
     [COMMIT_SHA]         SHA1 of the commit (optional)
-"),
+"
+        ),
         _ => {
-            eprintln!("Unknown command: {}", command);
+            eprintln!("Unknown command: {command}");
             eprintln!("Run 'hookmaster --help' for usage information.");
         }
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn parse_args() -> Result<(bool, Command)> {
     let mut args = pico_args::Arguments::from_env();
-    
+
     // Handle version
     if args.contains(["-V", "--version"]) {
-        println!("{}", VERSION);
+        println!("{VERSION}");
         std::process::exit(0);
     }
-    
+
     // Parse verbose flag
     let verbose = args.contains(["-v", "--verbose"]);
-    
+
     // Check for help flag (but don't consume it yet)
     let has_help = args.clone().contains(["-h", "--help"]);
-    
+
     // Get the subcommand
     let subcommand: String = match args.free_from_str() {
         Ok(cmd) => cmd,
         Err(_) => {
             if has_help {
-                println!("{}", HELP);
+                println!("{HELP}");
                 std::process::exit(0);
             }
-            return Err(anyhow!("No command specified. Run 'hookmaster --help' for usage information."));
+            return Err(anyhow!(
+                "No command specified. Run 'hookmaster --help' for usage information."
+            ));
         }
     };
-    
+
     // Handle command-specific help
     if args.contains(["-h", "--help"]) {
         print_help_for_command(&subcommand);
         std::process::exit(0);
     }
-    
+
     let command = match subcommand.as_str() {
         "add" => {
-            let path: String = args.free_from_str()
-                .map_err(|_| anyhow!("Missing required argument: PATH\n\nFor more information try --help"))?;
+            let path: String = args.free_from_str().map_err(|_| {
+                anyhow!("Missing required argument: PATH\n\nFor more information try --help")
+            })?;
             // Check for unexpected arguments for add command
             let remaining = args.finish();
             if !remaining.is_empty() {
-                let unexpected: Vec<String> = remaining.into_iter()
+                let unexpected: Vec<String> = remaining
+                    .into_iter()
                     .map(|s| s.to_string_lossy().to_string())
                     .collect();
-                return Err(anyhow!("Unexpected argument(s): {}\n\nFor more information try --help", unexpected.join(", ")));
+                return Err(anyhow!(
+                    "Unexpected argument(s): {}\n\nFor more information try --help",
+                    unexpected.join(", ")
+                ));
             }
-            Command::Add { path: PathBuf::from(path) }
+            Command::Add {
+                path: PathBuf::from(path),
+            }
         }
         "init" => {
             // Check for unexpected arguments for init command
             let remaining = args.finish();
             if !remaining.is_empty() {
-                let unexpected: Vec<String> = remaining.into_iter()
+                let unexpected: Vec<String> = remaining
+                    .into_iter()
                     .map(|s| s.to_string_lossy().to_string())
                     .collect();
-                return Err(anyhow!("Unexpected argument(s): {}\n\nFor more information try --help", unexpected.join(", ")));
+                return Err(anyhow!(
+                    "Unexpected argument(s): {}\n\nFor more information try --help",
+                    unexpected.join(", ")
+                ));
             }
             Command::Init
         }
         "run" => {
-            let hook_name: String = args.free_from_str()
-                .map_err(|_| anyhow!("Missing required argument: HOOK_NAME\n\nFor more information try --help"))?;
+            let hook_name: String = args.free_from_str().map_err(|_| {
+                anyhow!("Missing required argument: HOOK_NAME\n\nFor more information try --help")
+            })?;
             // For run command, remaining args are passed to the hook
-            let remaining_args: Vec<String> = args.finish().into_iter().map(|s| s.to_string_lossy().to_string()).collect();
-            Command::Run { hook_name, args: remaining_args }
+            let remaining_args: Vec<String> = args
+                .finish()
+                .into_iter()
+                .map(|s| s.to_string_lossy().to_string())
+                .collect();
+            Command::Run {
+                hook_name,
+                args: remaining_args,
+            }
         }
         "prepare-commit-msg" => {
-            let commit_msg_file: String = args.free_from_str()
-                .map_err(|_| anyhow!("Missing required argument: COMMIT_MSG_FILE\n\nFor more information try --help"))?;
+            let commit_msg_file: String = args.free_from_str().map_err(|_| {
+                anyhow!(
+                    "Missing required argument: COMMIT_MSG_FILE\n\nFor more information try --help"
+                )
+            })?;
             let commit_source: Option<String> = args.free_from_str().ok();
             let commit_sha: Option<String> = args.free_from_str().ok();
             // Check for unexpected arguments for prepare-commit-msg command
             let remaining = args.finish();
             if !remaining.is_empty() {
-                let unexpected: Vec<String> = remaining.into_iter()
+                let unexpected: Vec<String> = remaining
+                    .into_iter()
                     .map(|s| s.to_string_lossy().to_string())
                     .collect();
-                return Err(anyhow!("Unexpected argument(s): {}\n\nFor more information try --help", unexpected.join(", ")));
+                return Err(anyhow!(
+                    "Unexpected argument(s): {}\n\nFor more information try --help",
+                    unexpected.join(", ")
+                ));
             }
-            Command::PrepareCommitMsg { 
+            Command::PrepareCommitMsg {
                 commit_msg_file: PathBuf::from(commit_msg_file),
                 commit_source,
                 commit_sha,
             }
         }
         _ => {
-            return Err(anyhow!("Unknown command: '{}'\n\nFor more information try --help", subcommand));
+            return Err(anyhow!(
+                "Unknown command: '{}'\n\nFor more information try --help",
+                subcommand
+            ));
         }
     };
-    
+
     Ok((verbose, command))
 }
 
@@ -185,7 +230,10 @@ fn main() -> Result<()> {
     match command {
         Command::Add { path } => {
             if verbose {
-                println!("Adding hookmaster hooks to repositories under: {}", path.display());
+                println!(
+                    "Adding hookmaster hooks to repositories under: {}",
+                    path.display()
+                );
             }
             let hook_manager = HookManager::new();
             hook_manager.add_hooks_to_path(&path)?;
@@ -199,19 +247,27 @@ fn main() -> Result<()> {
         }
         Command::Run { hook_name, args } => {
             if verbose {
-                println!("Running hook: {}", hook_name);
+                println!("Running hook: {hook_name}");
             }
             let hook_manager = HookManager::new();
             hook_manager.run_hook(&hook_name, &args)?;
         }
-        Command::PrepareCommitMsg { commit_msg_file, commit_source, commit_sha } => {
+        Command::PrepareCommitMsg {
+            commit_msg_file,
+            commit_source,
+            commit_sha,
+        } => {
             if verbose {
                 println!("Processing prepare-commit-msg hook");
             }
             let hook_manager = HookManager::new();
-            hook_manager.prepare_commit_msg(&commit_msg_file, commit_source.as_deref(), commit_sha.as_deref())?;
+            hook_manager.prepare_commit_msg(
+                &commit_msg_file,
+                commit_source.as_deref(),
+                commit_sha.as_deref(),
+            )?;
         }
     }
 
     Ok(())
-} 
+}

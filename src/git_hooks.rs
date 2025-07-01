@@ -7,6 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 
 /// Represents a Git hook type
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum GitHook {
     PreCommit,
     PrepareCommitMsg,
@@ -36,6 +37,7 @@ impl GitHook {
     }
 
     /// Parse from string
+    #[allow(dead_code)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "pre-commit" => GitHook::PreCommit,
@@ -53,11 +55,10 @@ impl GitHook {
     /// Generate the hook script content
     pub fn generate_script_content(&self) -> String {
         match self {
-            GitHook::PrepareCommitMsg => {
-                r#"#!/bin/sh
+            GitHook::PrepareCommitMsg => r#"#!/bin/sh
 hookmaster prepare-commit-msg "$@"
-"#.to_string()
-            }
+"#
+            .to_string(),
             _ => {
                 format!(
                     r#"#!/bin/sh
@@ -73,8 +74,9 @@ hookmaster run {} "$@"
     pub fn install_to_repo(&self, repo_path: &Path) -> Result<()> {
         let hooks_dir = repo_path.join(".git").join("hooks");
         if !hooks_dir.exists() {
-            fs::create_dir_all(&hooks_dir)
-                .with_context(|| format!("Failed to create hooks directory: {}", hooks_dir.display()))?;
+            fs::create_dir_all(&hooks_dir).with_context(|| {
+                format!("Failed to create hooks directory: {}", hooks_dir.display())
+            })?;
         }
 
         let hook_file = hooks_dir.join(self.to_filename());
@@ -88,8 +90,9 @@ hookmaster run {} "$@"
         {
             let mut perms = fs::metadata(&hook_file)?.permissions();
             perms.set_mode(0o755);
-            fs::set_permissions(&hook_file, perms)
-                .with_context(|| format!("Failed to make hook executable: {}", hook_file.display()))?;
+            fs::set_permissions(&hook_file, perms).with_context(|| {
+                format!("Failed to make hook executable: {}", hook_file.display())
+            })?;
         }
 
         Ok(())
@@ -115,7 +118,7 @@ pub fn is_git_repository(path: &Path) -> bool {
 /// Find all git repositories under a given path
 pub fn find_git_repositories(path: &Path) -> Result<Vec<PathBuf>> {
     let mut repos = Vec::new();
-    
+
     if is_git_repository(path) {
         repos.push(path.to_path_buf());
     }
@@ -136,10 +139,16 @@ fn visit_dirs(dir: &Path, repos: &mut Vec<PathBuf>) -> Result<()> {
     for entry in entries {
         let entry = entry.with_context(|| "Failed to read directory entry")?;
         let path = entry.path();
-        
+
         if path.is_dir() && is_git_repository(&path) {
             repos.push(path.clone());
-        } else if path.is_dir() && !path.file_name().unwrap_or_default().to_string_lossy().starts_with('.') {
+        } else if path.is_dir()
+            && !path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .starts_with('.')
+        {
             // Recursively search subdirectories, but skip hidden directories
             visit_dirs(&path, repos)?;
         }
@@ -155,15 +164,27 @@ mod tests {
     #[test]
     fn test_git_hook_filename() {
         assert_eq!(GitHook::PreCommit.to_filename(), "pre-commit");
-        assert_eq!(GitHook::PrepareCommitMsg.to_filename(), "prepare-commit-msg");
-        assert_eq!(GitHook::Custom("custom-hook".to_string()).to_filename(), "custom-hook");
+        assert_eq!(
+            GitHook::PrepareCommitMsg.to_filename(),
+            "prepare-commit-msg"
+        );
+        assert_eq!(
+            GitHook::Custom("custom-hook".to_string()).to_filename(),
+            "custom-hook"
+        );
     }
 
     #[test]
     fn test_git_hook_from_str() {
         assert_eq!(GitHook::from_str("pre-commit"), GitHook::PreCommit);
-        assert_eq!(GitHook::from_str("prepare-commit-msg"), GitHook::PrepareCommitMsg);
-        assert_eq!(GitHook::from_str("custom"), GitHook::Custom("custom".to_string()));
+        assert_eq!(
+            GitHook::from_str("prepare-commit-msg"),
+            GitHook::PrepareCommitMsg
+        );
+        assert_eq!(
+            GitHook::from_str("custom"),
+            GitHook::Custom("custom".to_string())
+        );
     }
 
     #[test]
@@ -177,4 +198,4 @@ mod tests {
         let content = prepare_commit.generate_script_content();
         assert!(content.contains("hookmaster prepare-commit-msg"));
     }
-} 
+}
