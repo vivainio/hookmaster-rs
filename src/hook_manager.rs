@@ -97,7 +97,7 @@ impl HookManager {
     /// Run a specific hook command
     pub fn run_hook(&self, hook_name: &str, _args: &[String]) -> Result<()> {
         // Load configuration
-        let config = GitHooksConfig::load_from_current_dir()
+        let config = GitHooksConfig::load()
             .with_context(|| "Failed to load githooks.toml")?;
 
         // Check if hook is defined and active

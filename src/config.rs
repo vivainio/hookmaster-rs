@@ -1,9 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-/// Configuration structure for githooks.toml
+/// Configuration for git hooks
 #[derive(Debug, Default)]
 pub struct GitHooksConfig {
     /// Map of hook names to commands
@@ -11,7 +11,7 @@ pub struct GitHooksConfig {
 }
 
 impl GitHooksConfig {
-    /// Load configuration from githooks.toml file
+    /// Load configuration from a TOML file
     pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read config file: {}", path.as_ref().display()))?;
@@ -22,8 +22,9 @@ impl GitHooksConfig {
     }
 
     /// Load configuration from current directory
-    pub fn load_from_current_dir() -> Result<Self> {
+    pub fn load() -> Result<Self> {
         let config_path = Path::new("githooks.toml");
+        
         if config_path.exists() {
             Self::load_from_file(config_path)
         } else {
@@ -41,11 +42,11 @@ impl GitHooksConfig {
         Ok(())
     }
 
-    /// Simple TOML parser for key = "value" pairs
+    /// Enhanced TOML parser for key = "value" pairs with better error handling
     fn parse_toml(content: &str) -> Result<Self> {
         let mut hooks = HashMap::new();
-
-        for line in content.lines() {
+        
+        for (line_num, line) in content.lines().enumerate() {
             let line = line.trim();
 
             // Skip empty lines and comments
@@ -55,26 +56,48 @@ impl GitHooksConfig {
 
             // Parse key = "value" or key = 'value'
             if let Some(eq_pos) = line.find('=') {
-                let key = line[..eq_pos].trim().to_string();
+                let key = line[..eq_pos].trim();
                 let value_part = line[eq_pos + 1..].trim();
 
-                // Remove quotes if present
-                let value = if (value_part.starts_with('"') && value_part.ends_with('"'))
-                    || (value_part.starts_with('\'') && value_part.ends_with('\''))
-                {
+                // Validate key (no spaces, valid identifier)
+                if key.is_empty() || key.contains(' ') {
+                    return Err(anyhow!(
+                        "Invalid key '{}' on line {}. Keys cannot be empty or contain spaces.",
+                        key,
+                        line_num + 1
+                    ));
+                }
+
+                // Parse value with proper quote handling
+                let value = if value_part.starts_with('"') && value_part.ends_with('"') && value_part.len() >= 2 {
+                    // Handle escaped quotes in double-quoted strings
+                    let inner = &value_part[1..value_part.len() - 1];
+                    inner.replace(r#"\""#, "\"").replace(r"\\", "\\")
+                } else if value_part.starts_with('\'') && value_part.ends_with('\'') && value_part.len() >= 2 {
+                    // Single-quoted strings (literal)
                     value_part[1..value_part.len() - 1].to_string()
+                } else if value_part.is_empty() {
+                    // Empty value (no quotes)
+                    String::new()
                 } else {
+                    // Unquoted value
                     value_part.to_string()
                 };
 
-                hooks.insert(key, value);
+                hooks.insert(key.to_string(), value);
+            } else if !line.is_empty() {
+                return Err(anyhow!(
+                    "Invalid TOML syntax on line {}: '{}'. Expected 'key = value' format.",
+                    line_num + 1,
+                    line
+                ));
             }
         }
 
         Ok(GitHooksConfig { hooks })
     }
 
-    /// Convert to TOML string
+    /// Convert to TOML string with proper escaping
     fn to_toml_string(&self) -> String {
         let mut lines = Vec::new();
 
@@ -83,15 +106,17 @@ impl GitHooksConfig {
         sorted_hooks.sort_by_key(|(k, _)| *k);
 
         for (key, value) in sorted_hooks {
-            lines.push(format!("{key} = \"{value}\""));
+            // Escape quotes and backslashes in values
+            let escaped_value = value.replace('\\', r"\\").replace('"', r#"\""#);
+            lines.push(format!("{key} = \"{escaped_value}\""));
         }
 
         lines.join("\n") + "\n"
     }
 
     /// Get command for a specific hook
-    pub fn get_hook_command(&self, hook_name: &str) -> Option<&String> {
-        self.hooks.get(hook_name)
+    pub fn get_hook_command(&self, hook_name: &str) -> Option<&str> {
+        self.hooks.get(hook_name).map(|s| s.as_str())
     }
 
     /// Create a sample configuration
@@ -140,6 +165,34 @@ commit-msg = ""
             Some(&"cargo test".to_string())
         );
         assert_eq!(config.hooks.get("commit-msg"), Some(&"".to_string()));
+    }
+
+    #[test]
+    fn test_parse_escaped_quotes() {
+        let content = r#"test-hook = "echo \"Hello World\"""#;
+        let config = GitHooksConfig::parse_toml(content).unwrap();
+        assert_eq!(
+            config.hooks.get("test-hook"),
+            Some(&"echo \"Hello World\"".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_single_quotes() {
+        let content = r#"test-hook = 'echo "Hello World"'"#;
+        let config = GitHooksConfig::parse_toml(content).unwrap();
+        assert_eq!(
+            config.hooks.get("test-hook"),
+            Some(&"echo \"Hello World\"".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_invalid_key() {
+        let content = "invalid key = \"value\"";
+        let result = GitHooksConfig::parse_toml(content);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid key"));
     }
 
     #[test]
