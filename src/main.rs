@@ -1,5 +1,4 @@
-use anyhow::Result;
-use clap::{Parser, Subcommand};
+use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
 mod config;
@@ -9,73 +8,204 @@ mod hook_manager;
 
 use hook_manager::HookManager;
 
-#[derive(Parser)]
-#[command(name = "hookmaster")]
-#[command(about = "Some nice git hooks for your pleasure")]
-#[command(version)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-    
-    #[arg(short, long, global = true)]
-    verbose: bool,
-}
+const HELP: &str = "\
+hookmaster 0.1.0
+Some nice git hooks for your pleasure
 
-#[derive(Subcommand)]
-enum Commands {
-    /// Add hookmaster hooks to all projects under the specified path
-    Add {
-        /// Path to add hooks to (searches recursively for git repositories)
-        path: PathBuf,
-    },
-    /// Initialize current repository with sample githooks.toml
+USAGE:
+    hookmaster [OPTIONS] <COMMAND> [ARGS]...
+
+OPTIONS:
+    -h, --help       Print help information
+    -V, --version    Print version information
+    -v, --verbose    Enable verbose output
+
+COMMANDS:
+    add                 Add hookmaster hooks to all projects under the specified path
+    init                Initialize current repository with sample githooks.toml
+    run                 Run a specific hook command
+    prepare-commit-msg  Process prepare-commit-msg hook
+
+Use 'hookmaster <command> --help' for more information on a specific command.
+";
+
+const VERSION: &str = "hookmaster 0.1.0";
+
+enum Command {
+    Add { path: PathBuf },
     Init,
-    /// Run a specific hook command
-    Run {
-        /// Hook name to run (e.g., pre-commit, commit-msg, etc.)
-        hook_name: String,
-        /// Additional arguments to pass to the hook
-        #[arg(trailing_var_arg = true)]
-        args: Vec<String>,
-    },
-    /// Process prepare-commit-msg hook
-    PrepareCommitMsg {
-        /// Path to the commit message file
+    Run { hook_name: String, args: Vec<String> },
+    PrepareCommitMsg { 
         commit_msg_file: PathBuf,
-        /// Commit source (optional)
         commit_source: Option<String>,
-        /// SHA1 of the commit (optional)
         commit_sha: Option<String>,
     },
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
+fn print_help_for_command(command: &str) {
+    match command {
+        "add" => println!("\
+Add hookmaster hooks to all projects under the specified path
 
-    match cli.command {
-        Commands::Add { path } => {
-            if cli.verbose {
+USAGE:
+    hookmaster add <PATH>
+
+ARGS:
+    <PATH>    Path to add hooks to (searches recursively for git repositories)
+"),
+        "init" => println!("\
+Initialize current repository with sample githooks.toml
+
+USAGE:
+    hookmaster init
+"),
+        "run" => println!("\
+Run a specific hook command
+
+USAGE:
+    hookmaster run <HOOK_NAME> [ARGS]...
+
+ARGS:
+    <HOOK_NAME>    Hook name to run (e.g., pre-commit, commit-msg, etc.)
+    [ARGS]...      Additional arguments to pass to the hook
+"),
+        "prepare-commit-msg" => println!("\
+Process prepare-commit-msg hook
+
+USAGE:
+    hookmaster prepare-commit-msg <COMMIT_MSG_FILE> [COMMIT_SOURCE] [COMMIT_SHA]
+
+ARGS:
+    <COMMIT_MSG_FILE>    Path to the commit message file
+    [COMMIT_SOURCE]      Commit source (optional)
+    [COMMIT_SHA]         SHA1 of the commit (optional)
+"),
+        _ => {
+            eprintln!("Unknown command: {}", command);
+            eprintln!("Run 'hookmaster --help' for usage information.");
+        }
+    }
+}
+
+fn parse_args() -> Result<(bool, Command)> {
+    let mut args = pico_args::Arguments::from_env();
+    
+    // Handle version
+    if args.contains(["-V", "--version"]) {
+        println!("{}", VERSION);
+        std::process::exit(0);
+    }
+    
+    // Parse verbose flag
+    let verbose = args.contains(["-v", "--verbose"]);
+    
+    // Check for help flag (but don't consume it yet)
+    let has_help = args.clone().contains(["-h", "--help"]);
+    
+    // Get the subcommand
+    let subcommand: String = match args.free_from_str() {
+        Ok(cmd) => cmd,
+        Err(_) => {
+            if has_help {
+                println!("{}", HELP);
+                std::process::exit(0);
+            }
+            return Err(anyhow!("No command specified. Run 'hookmaster --help' for usage information."));
+        }
+    };
+    
+    // Handle command-specific help
+    if args.contains(["-h", "--help"]) {
+        print_help_for_command(&subcommand);
+        std::process::exit(0);
+    }
+    
+    let command = match subcommand.as_str() {
+        "add" => {
+            let path: String = args.free_from_str()
+                .map_err(|_| anyhow!("Missing required argument: PATH\n\nFor more information try --help"))?;
+            // Check for unexpected arguments for add command
+            let remaining = args.finish();
+            if !remaining.is_empty() {
+                let unexpected: Vec<String> = remaining.into_iter()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .collect();
+                return Err(anyhow!("Unexpected argument(s): {}\n\nFor more information try --help", unexpected.join(", ")));
+            }
+            Command::Add { path: PathBuf::from(path) }
+        }
+        "init" => {
+            // Check for unexpected arguments for init command
+            let remaining = args.finish();
+            if !remaining.is_empty() {
+                let unexpected: Vec<String> = remaining.into_iter()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .collect();
+                return Err(anyhow!("Unexpected argument(s): {}\n\nFor more information try --help", unexpected.join(", ")));
+            }
+            Command::Init
+        }
+        "run" => {
+            let hook_name: String = args.free_from_str()
+                .map_err(|_| anyhow!("Missing required argument: HOOK_NAME\n\nFor more information try --help"))?;
+            // For run command, remaining args are passed to the hook
+            let remaining_args: Vec<String> = args.finish().into_iter().map(|s| s.to_string_lossy().to_string()).collect();
+            Command::Run { hook_name, args: remaining_args }
+        }
+        "prepare-commit-msg" => {
+            let commit_msg_file: String = args.free_from_str()
+                .map_err(|_| anyhow!("Missing required argument: COMMIT_MSG_FILE\n\nFor more information try --help"))?;
+            let commit_source: Option<String> = args.free_from_str().ok();
+            let commit_sha: Option<String> = args.free_from_str().ok();
+            // Check for unexpected arguments for prepare-commit-msg command
+            let remaining = args.finish();
+            if !remaining.is_empty() {
+                let unexpected: Vec<String> = remaining.into_iter()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .collect();
+                return Err(anyhow!("Unexpected argument(s): {}\n\nFor more information try --help", unexpected.join(", ")));
+            }
+            Command::PrepareCommitMsg { 
+                commit_msg_file: PathBuf::from(commit_msg_file),
+                commit_source,
+                commit_sha,
+            }
+        }
+        _ => {
+            return Err(anyhow!("Unknown command: '{}'\n\nFor more information try --help", subcommand));
+        }
+    };
+    
+    Ok((verbose, command))
+}
+
+fn main() -> Result<()> {
+    let (verbose, command) = parse_args()?;
+
+    match command {
+        Command::Add { path } => {
+            if verbose {
                 println!("Adding hookmaster hooks to repositories under: {}", path.display());
             }
             let hook_manager = HookManager::new();
             hook_manager.add_hooks_to_path(&path)?;
         }
-        Commands::Init => {
-            if cli.verbose {
+        Command::Init => {
+            if verbose {
                 println!("Initializing repository with sample githooks.toml");
             }
             let hook_manager = HookManager::new();
             hook_manager.init_repository()?;
         }
-        Commands::Run { hook_name, args } => {
-            if cli.verbose {
+        Command::Run { hook_name, args } => {
+            if verbose {
                 println!("Running hook: {}", hook_name);
             }
             let hook_manager = HookManager::new();
             hook_manager.run_hook(&hook_name, &args)?;
         }
-        Commands::PrepareCommitMsg { commit_msg_file, commit_source, commit_sha } => {
-            if cli.verbose {
+        Command::PrepareCommitMsg { commit_msg_file, commit_source, commit_sha } => {
+            if verbose {
                 println!("Processing prepare-commit-msg hook");
             }
             let hook_manager = HookManager::new();
