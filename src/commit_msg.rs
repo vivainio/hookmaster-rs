@@ -1,9 +1,9 @@
 use anyhow::{Context, Result};
-use git2::Repository;
 use regex::Regex;
 use std::fs;
 use std::path::Path;
-use tracing::{debug, info, warn};
+use std::process::Command;
+use tracing::{debug, info};
 
 /// Commit message processor that formats messages based on branch names
 pub struct CommitMessageProcessor {
@@ -71,16 +71,22 @@ impl CommitMessageProcessor {
 
     /// Get current branch name from git repository
     fn get_current_branch_name(&self) -> Result<String> {
-        let repo = Repository::open(".")
-            .with_context(|| "Failed to open git repository")?;
+        let output = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()
+            .with_context(|| "Failed to execute git command")?;
         
-        let head = repo.head()
-            .with_context(|| "Failed to get HEAD reference")?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Git command failed: {}", stderr));
+        }
         
-        let branch_name = head.shorthand()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get branch name"))?;
+        let branch_name = String::from_utf8(output.stdout)
+            .with_context(|| "Invalid UTF-8 in git output")?
+            .trim()
+            .to_string();
         
-        Ok(branch_name.to_string())
+        Ok(branch_name)
     }
 
     /// Format commit message based on branch name

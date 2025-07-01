@@ -52,8 +52,7 @@ enum Commands {
     },
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     
     // Initialize tracing
@@ -66,22 +65,22 @@ async fn main() -> Result<()> {
         Commands::Add { path } => {
             info!("Adding hookmaster hooks to repositories under: {}", path.display());
             let hook_manager = HookManager::new();
-            hook_manager.add_hooks_to_path(&path).await?;
+            hook_manager.add_hooks_to_path(&path)?;
         }
         Commands::Init => {
             info!("Initializing repository with sample githooks.toml");
             let hook_manager = HookManager::new();
-            hook_manager.init_repository().await?;
+            hook_manager.init_repository()?;
         }
         Commands::Run { hook_name, args } => {
             info!("Running hook: {}", hook_name);
             let hook_manager = HookManager::new();
-            hook_manager.run_hook(&hook_name, &args).await?;
+            hook_manager.run_hook(&hook_name, &args)?;
         }
         Commands::PrepareCommitMsg { commit_msg_file, commit_source, commit_sha } => {
             info!("Processing prepare-commit-msg hook");
             let hook_manager = HookManager::new();
-            hook_manager.prepare_commit_msg(&commit_msg_file, commit_source.as_deref(), commit_sha.as_deref()).await?;
+            hook_manager.prepare_commit_msg(&commit_msg_file, commit_source.as_deref(), commit_sha.as_deref())?;
         }
     }
 

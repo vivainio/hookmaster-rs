@@ -27,7 +27,7 @@ impl HookManager {
     }
 
     /// Add hookmaster hooks to all repositories under the given path
-    pub async fn add_hooks_to_path(&self, path: &Path) -> Result<()> {
+    pub fn add_hooks_to_path(&self, path: &Path) -> Result<()> {
         info!("Searching for git repositories under: {}", path.display());
         
         let repositories = find_git_repositories(path)
@@ -42,7 +42,7 @@ impl HookManager {
 
         for repo in repositories {
             info!("Installing hooks to: {}", repo.display());
-            self.install_hooks_to_repo(&repo).await?;
+            self.install_hooks_to_repo(&repo)?;
         }
 
         info!("Successfully installed hooks to all repositories");
@@ -50,7 +50,7 @@ impl HookManager {
     }
 
     /// Install hooks to a specific repository
-    async fn install_hooks_to_repo(&self, repo_path: &Path) -> Result<()> {
+    fn install_hooks_to_repo(&self, repo_path: &Path) -> Result<()> {
         // Install standard hooks
         for hook in GitHook::standard_hooks() {
             hook.install_to_repo(repo_path)
@@ -63,7 +63,7 @@ impl HookManager {
     }
 
     /// Initialize current repository with sample githooks.toml
-    pub async fn init_repository(&self) -> Result<()> {
+    pub fn init_repository(&self) -> Result<()> {
         let config_path = Path::new("githooks.toml");
         
         if config_path.exists() {
@@ -83,7 +83,7 @@ impl HookManager {
             .with_context(|| "Failed to get current directory")?;
         
         if crate::git_hooks::is_git_repository(&current_dir) {
-            self.install_hooks_to_repo(&current_dir).await?;
+            self.install_hooks_to_repo(&current_dir)?;
             info!("Installed hooks to current repository");
         } else {
             warn!("Current directory is not a git repository, hooks not installed");
@@ -93,7 +93,7 @@ impl HookManager {
     }
 
     /// Run a specific hook command
-    pub async fn run_hook(&self, hook_name: &str, args: &[String]) -> Result<()> {
+    pub fn run_hook(&self, hook_name: &str, args: &[String]) -> Result<()> {
         debug!("Running hook: {} with args: {:?}", hook_name, args);
 
         // Load configuration
@@ -142,7 +142,7 @@ impl HookManager {
     }
 
     /// Handle prepare-commit-msg hook
-    pub async fn prepare_commit_msg(&self, commit_msg_file: &Path, commit_source: Option<&str>, commit_sha: Option<&str>) -> Result<()> {
+    pub fn prepare_commit_msg(&self, commit_msg_file: &Path, commit_source: Option<&str>, commit_sha: Option<&str>) -> Result<()> {
         debug!("Processing prepare-commit-msg hook");
         debug!("Commit message file: {}", commit_msg_file.display());
         debug!("Commit source: {:?}", commit_source);
@@ -161,8 +161,8 @@ mod tests {
     use tempfile::TempDir;
     use std::fs;
 
-    #[tokio::test]
-    async fn test_init_repository() {
+    #[test]
+    fn test_init_repository() {
         let temp_dir = TempDir::new().unwrap();
         let old_dir = std::env::current_dir().unwrap();
         
@@ -170,7 +170,7 @@ mod tests {
         std::env::set_current_dir(temp_dir.path()).unwrap();
         
         let hook_manager = HookManager::new();
-        let result = hook_manager.init_repository().await;
+        let result = hook_manager.init_repository();
         
         // Restore original directory
         std::env::set_current_dir(old_dir).unwrap();
@@ -179,8 +179,8 @@ mod tests {
         assert!(temp_dir.path().join("githooks.toml").exists());
     }
 
-    #[tokio::test]
-    async fn test_run_hook_with_empty_config() {
+    #[test]
+    fn test_run_hook_with_empty_config() {
         let temp_dir = TempDir::new().unwrap();
         let old_dir = std::env::current_dir().unwrap();
         
@@ -192,7 +192,7 @@ mod tests {
         config.save_to_file("githooks.toml").unwrap();
         
         let hook_manager = HookManager::new();
-        let result = hook_manager.run_hook("non-existent", &[]).await;
+        let result = hook_manager.run_hook("non-existent", &[]);
         
         // Restore original directory
         std::env::set_current_dir(old_dir).unwrap();

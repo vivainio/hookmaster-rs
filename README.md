@@ -13,6 +13,8 @@ A Rust implementation of hookmaster - some nice git hooks for your pleasure.
 - **Configurable git hooks**: Define hook commands in a `githooks.toml` file
 - **Easy installation**: Install hooks to multiple repositories at once
 - **Cross-platform**: Works on Windows, macOS, and Linux
+- **Lightweight**: Small binary (~4MB) with minimal dependencies
+- **Fast**: Synchronous operations with no async overhead
 
 ## Installation
 
@@ -112,6 +114,7 @@ hookmaster run pre-commit
 2. **Commit Message Processing**: Extracts ticket numbers from branch names using regex patterns
 3. **Command Execution**: Runs configured commands from `githooks.toml`
 4. **Cross-platform**: Handles Windows (cmd) and Unix (sh) command execution
+5. **Git Integration**: Uses simple git commands instead of heavy libraries for maximum compatibility
 
 ## Branch Name Patterns
 
