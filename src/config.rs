@@ -24,7 +24,7 @@ impl GitHooksConfig {
     /// Load configuration from current directory
     pub fn load() -> Result<Self> {
         let config_path = Path::new("githooks.toml");
-        
+
         if config_path.exists() {
             Self::load_from_file(config_path)
         } else {
@@ -45,7 +45,7 @@ impl GitHooksConfig {
     /// Enhanced TOML parser for key = "value" pairs with better error handling
     fn parse_toml(content: &str) -> Result<Self> {
         let mut hooks = HashMap::new();
-        
+
         for (line_num, line) in content.lines().enumerate() {
             let line = line.trim();
 
@@ -69,11 +69,17 @@ impl GitHooksConfig {
                 }
 
                 // Parse value with proper quote handling
-                let value = if value_part.starts_with('"') && value_part.ends_with('"') && value_part.len() >= 2 {
+                let value = if value_part.starts_with('"')
+                    && value_part.ends_with('"')
+                    && value_part.len() >= 2
+                {
                     // Handle escaped quotes in double-quoted strings
                     let inner = &value_part[1..value_part.len() - 1];
                     inner.replace(r#"\""#, "\"").replace(r"\\", "\\")
-                } else if value_part.starts_with('\'') && value_part.ends_with('\'') && value_part.len() >= 2 {
+                } else if value_part.starts_with('\'')
+                    && value_part.ends_with('\'')
+                    && value_part.len() >= 2
+                {
                     // Single-quoted strings (literal)
                     value_part[1..value_part.len() - 1].to_string()
                 } else if value_part.is_empty() {
