@@ -110,31 +110,29 @@ fn parse_args() -> Result<(bool, Command)> {
         std::process::exit(0);
     }
 
+    // Handle global help flag first
+    if args.contains(["-h", "--help"]) {
+        // Check if there's a subcommand after the help flag
+        if let Ok(subcommand) = args.free_from_str::<String>() {
+            print_help_for_command(&subcommand);
+        } else {
+            println!("{HELP}");
+        }
+        std::process::exit(0);
+    }
+
     // Parse verbose flag
     let verbose = args.contains(["-v", "--verbose"]);
-
-    // Check for help flag (but don't consume it yet)
-    let has_help = args.clone().contains(["-h", "--help"]);
 
     // Get the subcommand
     let subcommand: String = match args.free_from_str() {
         Ok(cmd) => cmd,
         Err(_) => {
-            if has_help {
-                println!("{HELP}");
-                std::process::exit(0);
-            }
             return Err(anyhow!(
                 "No command specified. Run 'hookmaster --help' for usage information."
             ));
         }
     };
-
-    // Handle command-specific help
-    if args.contains(["-h", "--help"]) {
-        print_help_for_command(&subcommand);
-        std::process::exit(0);
-    }
 
     let command = match subcommand.as_str() {
         "add" => {
